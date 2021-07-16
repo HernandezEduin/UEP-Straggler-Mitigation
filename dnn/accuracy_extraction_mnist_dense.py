@@ -7,32 +7,59 @@ Summary: MNIST Accuracy Data
 """
 
 import keras
+from Neural_Networks.neural_networks import *
 
 from tqdm import trange
 from timeit import default_timer as timer
 import shelve
+
+import argparse
 import numpy as np
 import matplotlib.pyplot as plt
-from Neural_Networks.neural_networks import *
 
-#-----------------------------------------------------------------------------
-"Changeable Variables"
-batch_size = 60000 #64
-num_classes = 10
-epoch_num = 100
-learning_rate = 0.1
-sample_data = 1 #3
 
-mf = 0 #index of model to use
-max_wait = 2
-lam = 0.5
+def str2bool(string):
+    if isinstance(string, bool):
+       return string
+   
+    if string.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif string.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
 
-save_file=False #Save the data set
-# filename_save = 'shelve_accuracy_mnist_dense_decentralized3_tmax0.25_col' #Save location and name
-folder_path = 'D:/Dewen/Accuracy/'
-suffix = '.out'
+def parse_args():
+    parser = argparse.ArgumentParser(description='Variables for Cifar10 Training')
 
-plot_state = True
+    'Model Details'
+    parser.add_argument('--class-num', type=int, default=10, help='Number of classes for classifying')    
+    parser.add_argument('--batch-size', type=float, default=64, help='Batch Size for Training and Testing')
+    parser.add_argument('--epoch-num', type=int, default=3, help='Number of Iterations for Training')
+    parser.add_argument('--learning-rate', type=float, default=0.01, help='Learning Rate for model')
+    
+    parser.add_argument('--model-index', type=int, default = 3, help='Model to use for the learning')
+    parser.add_argument('--sample-num', type=int, default = 1, help='Number of Models to train from scratch')
+    
+    'Approximation Parameters'
+    parser.add_argument('--max-wait', type=float, default = 0.5, help='Maximum wait time for results to arrive')
+    parser.add_argument('--lam', type=float, default = 0.5, help='Scaling parameter for delay')
+    parser.add_argument('--prob-path', type=str, default ='./', help='Path for probabilities of correct decoding for UEP' )
+    
+    parser.add_argument('--suffix', type=str, default= '.out', help='Save file extension')
+    
+    'Save Details'
+    parser.add_argument('--save-acc', type=str2bool, default='True', help='Whether to Save the weights of the training')
+    parser.add_argument('--filename-acc', type=str, default= 'shelve_accuracy_mnist_', help='Filename for Saving Accuracy')
+    parser.add_argument('--folder-path-acc', type=str, default= './Accuracy/', help='Folder Save file path for Accuracy')
+
+    
+    'Plot'
+    parser.add_argument('--plot-state', type=str2bool, default='True', help='Whether to Plot the Accuracy and Loss')
+
+    args = parser.parse_args()
+    return args
+
 #-----------------------------------------------------------------------------
 
 "Training"
@@ -48,7 +75,7 @@ def train(network,X,y):
     layer_inputs = [X]+layer_activations  #layer_input[i] is an input for network[i]
     logits = layer_activations[-1]
     
-    pred = softmax(logits).argmax(axis=-1)
+    pred = logits.argmax(axis=-1)
     # Compute the loss and the initial gradient
     loss = softmax_crossentropy_with_logits(logits,y)
     loss_grad = grad_softmax_crossentropy_with_logits(logits,y)
@@ -79,397 +106,210 @@ def predict_batch(network,x,batch_size):
         pred.append(predict(network, x_batch))
     return np.asarray(pred).flatten()
 
-# def network_performance(network, X, Y):
-#     logits = forward(network,X)[-1]
-#     acc = logits.argmax(axis=-1) == Y
-#     lss = loss_func(logits, Y)
-#     return lss, acc
-
-# def network_performance_batch(network, X, Y):
-#     accuracy = []
-#     loss = []
-#     for x_batch, y_batch in iterate_minibatches_verbose_off(X,Y, batch_size):
-#         l, a = network_performance(network, x_batch, y_batch)
-#         accuracy.append(l)
-#         loss.append(a)
-#     return np.asarray(loss).flatten(), np.asarray(accuracy).flatten()
-
-def model0(input, num_classes, learning_rate):
-    'Uncoded - Centralized'
+'Base Model'
+def deep_model(input, num_classes, learning_rate, operations = np.zeros((3,3), dtype=int), op_pack = [{},{},{}]):
     network = []
+    
     output_shape = input.shape[1:]
     
     network.append(Flatten())
     output_shape = network[-1].get_output_shape(output_shape)
     
-    network.append(Dense(output_shape,100, learning_rate= learning_rate))
+    network.append(Dense(output_shape,100, learning_rate= learning_rate, operations = operations[0], operation_pack = op_pack))
     output_shape = network[-1].get_output_shape(output_shape)
     
     network.append(ReLU())
     output_shape = network[-1].get_output_shape(output_shape)
     
-    network.append(Dense(output_shape,200, learning_rate= learning_rate))
+    network.append(Dense(output_shape,200, learning_rate= learning_rate, operations = operations[1], operation_pack = op_pack))
     output_shape = network[-1].get_output_shape(output_shape)
     
     network.append(ReLU())
     output_shape = network[-1].get_output_shape(output_shape)
     
-    network.append(Dense(output_shape,num_classes, learning_rate= learning_rate))
+    network.append(Dense(output_shape,num_classes, learning_rate= learning_rate, operations = operations[2], operation_pack = op_pack))
     return network
+    
+    
+def model0(input, num_classes, learning_rate):
+    'Uncoded - Centralized'
+    return deep_model(input, num_classes, learning_rate = learning_rate)
 
 def model1(input, num_classes, learning_rate):
     'Uncoded - Decentralized - Rows x Cols'
     op_pack = {}
     op_pack['max_workers'] = 9
-    op_pack['max_wait'] = max_wait
+    op_pack['max_wait'] = args.max_wait
     op_pack['A_partitions'] = 3
     op_pack['B_partitions'] = 3
-    op_pack['lam'] = lam
+    op_pack['lam'] = args.lam
     op_pack['K'] = 9/op_pack['max_workers']
     
-    network = []
-    output_shape = input.shape[1:]
+    operations = [[0,1,1],
+                  [0,1,1],
+                  [0,1,1]]
     
-    network.append(Flatten())
-    output_shape = network[-1].get_output_shape(output_shape)
+    op_package = [{}, op_pack, op_pack]
     
-    network.append(Dense(output_shape,100, learning_rate= learning_rate, operations = [0,1,1], operation_pack = op_pack))
-    output_shape = network[-1].get_output_shape(output_shape)
-    
-    network.append(ReLU())
-    output_shape = network[-1].get_output_shape(output_shape)
-    
-    network.append(Dense(output_shape,200, learning_rate= learning_rate, operations = [0,1,1], operation_pack = op_pack))
-    output_shape = network[-1].get_output_shape(output_shape)
-    
-    network.append(ReLU())
-    output_shape = network[-1].get_output_shape(output_shape)
-    
-    network.append(Dense(output_shape,num_classes, learning_rate= learning_rate, operations = [0,1,1], operation_pack = op_pack))
-    return network
+    return deep_model(input, num_classes, learning_rate = learning_rate, operations = operations, op_pack=op_package)
 
 def model2(input, num_classes, learning_rate):
-    'UEP - NOW Model - Rows x Cols'
-    with open('D:/Dewen/Accuracy/prob_NOW_6classes.csv', 'r', encoding='utf-8-sig') as f: 
-        prob = np.genfromtxt(f, dtype=float, delimiter=',')
-    
-    op_pack = {}
-    op_pack['classes_num'] = prob.shape[0]
-    op_pack['class_prob'] = prob
-    op_pack['max_workers'] = 15
-    op_pack['max_wait'] = max_wait
-    op_pack['A_partitions'] = 3
-    op_pack['B_partitions'] = 3
-    op_pack['lam'] = lam
-    op_pack['K'] = 9/op_pack['max_workers']
-    op_pack['class_table'] = [[0, 1, 3],
-                              [1, 2, 4],
-                              [3, 4, 5]]
-    
-    network = []
-    output_shape = input.shape[1:]
-    
-    network.append(Flatten())
-    output_shape = network[-1].get_output_shape(output_shape)
-    
-    network.append(Dense(output_shape,100, learning_rate= learning_rate, operations = [0,2,2], operation_pack = op_pack))
-    output_shape = network[-1].get_output_shape(output_shape)
-    
-    network.append(ReLU())
-    output_shape = network[-1].get_output_shape(output_shape)
-    
-    network.append(Dense(output_shape,200, learning_rate= learning_rate, operations = [0,2,2], operation_pack = op_pack))
-    output_shape = network[-1].get_output_shape(output_shape)
-    
-    network.append(ReLU())
-    output_shape = network[-1].get_output_shape(output_shape)
-    
-    network.append(Dense(output_shape,num_classes, learning_rate= learning_rate, operations = [0,2,2], operation_pack = op_pack))
-    return network
-
-def model3(input, num_classes, learning_rate):
-    'UEP - NOW Model - Rows x Cols'
-    with open('D:/Dewen/Accuracy/prob_NOW_3classes.csv', 'r', encoding='utf-8-sig') as f: 
-        prob = np.genfromtxt(f, dtype=float, delimiter=',')
-    
-    op_pack = {}
-    op_pack['classes_num'] = prob.shape[0]
-    op_pack['class_prob'] = prob
-    op_pack['max_workers'] = 15
-    op_pack['max_wait'] = max_wait
-    op_pack['A_partitions'] = 3
-    op_pack['B_partitions'] = 3
-    op_pack['lam'] = lam
-    op_pack['K'] = 9/op_pack['max_workers']
-    op_pack['class_table'] = [[0, 1, 2],
-                              [1, 2, 2],
-                              [2, 2, 2]]
-    
-    network = []
-    output_shape = input.shape[1:]
-    
-    network.append(Flatten())
-    output_shape = network[-1].get_output_shape(output_shape)
-    
-    network.append(Dense(output_shape,100, learning_rate= learning_rate, operations = [0,2,2], operation_pack = op_pack))
-    output_shape = network[-1].get_output_shape(output_shape)
-    
-    network.append(ReLU())
-    output_shape = network[-1].get_output_shape(output_shape)
-    
-    network.append(Dense(output_shape,200, learning_rate= learning_rate, operations = [0,2,2], operation_pack = op_pack))
-    output_shape = network[-1].get_output_shape(output_shape)
-    
-    network.append(ReLU())
-    output_shape = network[-1].get_output_shape(output_shape)
-    
-    network.append(Dense(output_shape,num_classes, learning_rate= learning_rate, operations = [0,2,2], operation_pack = op_pack))
-    return network
-
-def model4(input, num_classes, learning_rate):
-    'UEP - EW Model - Rows x Cols'
-    with open('D:/Dewen/Accuracy/prob_EW_6classes.csv', 'r', encoding='utf-8-sig') as f: 
-        prob = np.genfromtxt(f, dtype=float, delimiter=',')
-    
-    op_pack = {}
-    op_pack['classes_num'] = prob.shape[0]
-    op_pack['class_prob'] = prob
-    op_pack['max_workers'] = 15
-    op_pack['max_wait'] = max_wait
-    op_pack['A_partitions'] = 3
-    op_pack['B_partitions'] = 3
-    op_pack['lam'] = lam
-    op_pack['K'] = 9/op_pack['max_workers']
-    op_pack['class_table'] = [[0, 1, 3],
-                              [1, 2, 4],
-                              [3, 4, 5]]
-    
-    network = []
-    output_shape = input.shape[1:]
-    
-    network.append(Flatten())
-    output_shape = network[-1].get_output_shape(output_shape)
-    
-    network.append(Dense(output_shape,100, learning_rate= learning_rate, operations = [0,2,2], operation_pack = op_pack))
-    output_shape = network[-1].get_output_shape(output_shape)
-    
-    network.append(ReLU())
-    output_shape = network[-1].get_output_shape(output_shape)
-    
-    network.append(Dense(output_shape,200, learning_rate= learning_rate, operations = [0,2,2], operation_pack = op_pack))
-    output_shape = network[-1].get_output_shape(output_shape)
-    
-    network.append(ReLU())
-    output_shape = network[-1].get_output_shape(output_shape)
-    
-    network.append(Dense(output_shape,num_classes, learning_rate= learning_rate, operations = [0,2,2], operation_pack = op_pack))
-    return network
-
-def model5(input, num_classes, learning_rate):
-    'UEP - EW Model - Rows x Cols'
-    with open('D:/Dewen/Accuracy/prob_EW_3classes.csv', 'r', encoding='utf-8-sig') as f: 
-        prob = np.genfromtxt(f, dtype=float, delimiter=',')
-    
-    op_pack = {}
-    op_pack['classes_num'] = prob.shape[0]
-    op_pack['class_prob'] = prob
-    op_pack['max_workers'] = 15
-    op_pack['max_wait'] = max_wait
-    op_pack['A_partitions'] = 3
-    op_pack['B_partitions'] = 3
-    op_pack['lam'] = lam
-    op_pack['K'] = 9/op_pack['max_workers']
-    op_pack['class_table'] = [[0, 1, 2],
-                              [1, 2, 2],
-                              [2, 2, 2]]
-    
-    network = []
-    output_shape = input.shape[1:]
-    
-    network.append(Flatten())
-    output_shape = network[-1].get_output_shape(output_shape)
-    
-    network.append(Dense(output_shape,100, learning_rate= learning_rate, operations = [0,2,2], operation_pack = op_pack))
-    output_shape = network[-1].get_output_shape(output_shape)
-    
-    network.append(ReLU())
-    output_shape = network[-1].get_output_shape(output_shape)
-    
-    network.append(Dense(output_shape,200, learning_rate= learning_rate, operations = [0,2,2], operation_pack = op_pack))
-    output_shape = network[-1].get_output_shape(output_shape)
-    
-    network.append(ReLU())
-    output_shape = network[-1].get_output_shape(output_shape)
-    
-    network.append(Dense(output_shape,num_classes, learning_rate= learning_rate, operations = [0,2,2], operation_pack = op_pack))
-    return network
-
-def model6(input, num_classes, learning_rate):
-    'Block Repetition Model - Rows x Cols'
-    op_pack = {}
-    op_pack['max_workers'] = 18
-    op_pack['max_wait'] = max_wait
-    op_pack['A_partitions'] = 3
-    op_pack['B_partitions'] = 3
-    op_pack['lam'] = lam
-    op_pack['K'] = 9/op_pack['max_workers']
-    op_pack['reps'] = 2
-    
-    network = []
-    output_shape = input.shape[1:]
-    
-    network.append(Flatten())
-    output_shape = network[-1].get_output_shape(output_shape)
-    
-    network.append(Dense(output_shape,100, learning_rate= learning_rate, operations = [0,3,3], operation_pack = op_pack))
-    output_shape = network[-1].get_output_shape(output_shape)
-    
-    network.append(ReLU())
-    output_shape = network[-1].get_output_shape(output_shape)
-    
-    network.append(Dense(output_shape,200, learning_rate= learning_rate, operations = [0,3,3], operation_pack = op_pack))
-    output_shape = network[-1].get_output_shape(output_shape)
-    
-    network.append(ReLU())
-    output_shape = network[-1].get_output_shape(output_shape)
-    
-    network.append(Dense(output_shape,num_classes, learning_rate= learning_rate, operations = [0,3,3], operation_pack = op_pack))
-    return network
-
-def model7(input, num_classes, learning_rate):
     'Uncoded - Decentralized - Cols x Rows'
     op_pack = {}
     op_pack['max_workers'] = 9
-    op_pack['max_wait'] = max_wait
+    op_pack['max_wait'] = args.max_wait
     op_pack['partitions'] = 9
     #op_pack['B_partitions'] = 9
-    op_pack['lam'] = lam
+    op_pack['lam'] = args.lam
     op_pack['K'] = 9/op_pack['max_workers']
     
-    network = []
-    output_shape = input.shape[1:]
+    operations = [[0,4,4],
+                  [0,4,4],
+                  [0,4,4]]
     
-    network.append(Flatten())
-    output_shape = network[-1].get_output_shape(output_shape)
+    op_package = [{}, op_pack, op_pack]
     
-    network.append(Dense(output_shape,100, learning_rate= learning_rate, operations = [0,4,4], operation_pack = op_pack))
-    output_shape = network[-1].get_output_shape(output_shape)
+    return deep_model(input, num_classes, learning_rate = learning_rate, operations = operations, op_pack=op_package)
+
+def model3(input, num_classes, learning_rate):
+    'UEP - NOW Model - Rows x Cols'
+    with open('./prob_NOW_3classes.csv', 'r', encoding='utf-8-sig') as f: 
+        prob = np.genfromtxt(f, dtype=float, delimiter=',')
     
-    network.append(ReLU())
-    output_shape = network[-1].get_output_shape(output_shape)
+    op_pack = {}
+    op_pack['classes_num'] = prob.shape[0]
+    op_pack['class_prob'] = prob
+    op_pack['max_workers'] = 15
+    op_pack['max_wait'] = args.max_wait
+    op_pack['A_partitions'] = 3
+    op_pack['B_partitions'] = 3
+    op_pack['lam'] = args.lam
+    op_pack['K'] = 9/op_pack['max_workers']
+    op_pack['class_table'] = [[0, 1, 2],
+                              [1, 2, 2],
+                              [2, 2, 2]]
     
-    network.append(Dense(output_shape,200, learning_rate= learning_rate, operations = [0,4,4], operation_pack = op_pack))
-    output_shape = network[-1].get_output_shape(output_shape)
+    operations = [[0,2,2],
+                  [0,2,2],
+                  [0,2,2]]
     
-    network.append(ReLU())
-    output_shape = network[-1].get_output_shape(output_shape)
+    op_package = [{}, op_pack, op_pack]
     
-    network.append(Dense(output_shape,num_classes, learning_rate= learning_rate, operations = [0,4,4], operation_pack = op_pack))
-    return network
+    return deep_model(input, num_classes, learning_rate = learning_rate, operations = operations, op_pack=op_package)
+
+def model4(input, num_classes, learning_rate):
+    'UEP - NOW Model - Cols x Rows'
+    with open('./prob_NOW_3classes.csv', 'r', encoding='utf-8-sig') as f: 
+        prob = np.genfromtxt(f, dtype=float, delimiter=',')
+    
+    op_pack = {}
+    op_pack['classes_num'] = prob.shape[0]
+    op_pack['class_prob'] = prob
+    op_pack['max_workers'] = 15
+    op_pack['max_wait'] = args.max_wait
+    op_pack['partitions'] = 9
+    op_pack['lam'] = args.lam
+    op_pack['K'] = 9/op_pack['max_workers']
+    op_pack['class_table'] = [0, 0, 0, 1, 1, 1, 2, 2, 2]
+    
+    operations = [[0,6,6],
+                  [0,6,6],
+                  [0,6,6]]
+    
+    op_package = [{}, op_pack, op_pack]
+    
+
+def model5(input, num_classes, learning_rate):
+    'UEP - EW Model - Rows x Cols'
+    with open('./prob_EW_3classes.csv', 'r', encoding='utf-8-sig') as f: 
+        prob = np.genfromtxt(f, dtype=float, delimiter=',')
+    
+    op_pack = {}
+    op_pack['classes_num'] = prob.shape[0]
+    op_pack['class_prob'] = prob
+    op_pack['max_workers'] = 15
+    op_pack['max_wait'] = args.max_wait
+    op_pack['A_partitions'] = 3
+    op_pack['B_partitions'] = 3
+    op_pack['lam'] = args.lam
+    op_pack['K'] = 9/op_pack['max_workers']
+    op_pack['class_table'] = [[0, 1, 2],
+                              [1, 2, 2],
+                              [2, 2, 2]]
+    
+    operations = [[0,2,2],
+                  [0,2,2],
+                  [0,2,2]]
+    
+    op_package = [{}, op_pack, op_pack]
+    
+    return deep_model(input, num_classes, learning_rate = learning_rate, operations = operations, op_pack=op_package)
+
+
+    return deep_model(input, num_classes, learning_rate = learning_rate, operations = operations, op_pack=op_package)
+
+def model6(input, num_classes, learning_rate):
+    'UEP - EW Model - Cols x Rows'
+    with open('./prob_EW_3classes.csv', 'r', encoding='utf-8-sig') as f: 
+        prob = np.genfromtxt(f, dtype=float, delimiter=',')
+    
+    op_pack = {}
+    op_pack['classes_num'] = prob.shape[0]
+    op_pack['class_prob'] = prob
+    op_pack['max_workers'] = 15
+    op_pack['max_wait'] = args.max_wait
+    op_pack['partitions'] = 9
+    op_pack['lam'] = args.lam
+    op_pack['K'] = 9/op_pack['max_workers']
+    op_pack['class_table'] = [0, 0, 0, 1, 1, 1, 2, 2, 2]
+    
+    operations = [[0,6,6],
+                  [0,6,6],
+                  [0,6,6]]
+    
+    op_package = [{}, op_pack, op_pack]
+    
+    return deep_model(input, num_classes, learning_rate = learning_rate, operations = operations, op_pack=op_package)
+
+def model7(input, num_classes, learning_rate):
+    'Block Repetition Model - Rows x Cols'
+    op_pack = {}
+    op_pack['max_workers'] = 18
+    op_pack['max_wait'] = args.max_wait
+    op_pack['A_partitions'] = 3
+    op_pack['B_partitions'] = 3
+    op_pack['lam'] = args.lam
+    op_pack['K'] = 9/op_pack['max_workers']
+    op_pack['reps'] = 2
+    
+    operations = [[0,3,3],
+                  [0,3,3],
+                  [0,3,3]]
+    
+    op_package = [{}, op_pack, op_pack]
+    
+    return deep_model(input, num_classes, learning_rate = learning_rate, operations = operations, op_pack=op_package)
 
 def model8(input, num_classes, learning_rate):
     'Block Repetition Model - Cols x Rows'
     op_pack = {}
     op_pack['max_workers'] = 18
-    op_pack['max_wait'] = max_wait
+    op_pack['max_wait'] = args.max_wait
     op_pack['partitions'] = 9
     #op_pack['B_partitions'] = 9
-    op_pack['lam'] = lam
+    op_pack['lam'] = args.lam
     op_pack['K'] = 9/op_pack['max_workers']
     op_pack['reps'] = 2
     
-    network = []
-    output_shape = input.shape[1:]
+    operations = [[0,5,5],
+                  [0,5,5],
+                  [0,5,5]]
     
-    network.append(Flatten())
-    output_shape = network[-1].get_output_shape(output_shape)
+    op_package = [{}, op_pack, op_pack]
     
-    network.append(Dense(output_shape,100, learning_rate= learning_rate, operations = [0,5,5], operation_pack = op_pack))
-    output_shape = network[-1].get_output_shape(output_shape)
-    
-    network.append(ReLU())
-    output_shape = network[-1].get_output_shape(output_shape)
-    
-    network.append(Dense(output_shape,200, learning_rate= learning_rate, operations = [0,5,5], operation_pack = op_pack))
-    output_shape = network[-1].get_output_shape(output_shape)
-    
-    network.append(ReLU())
-    output_shape = network[-1].get_output_shape(output_shape)
-    
-    network.append(Dense(output_shape,num_classes, learning_rate= learning_rate, operations = [0,5,5], operation_pack = op_pack))
-    return network
+    return deep_model(input, num_classes, learning_rate = learning_rate, operations = operations, op_pack=op_package)
 
-def model9(input, num_classes, learning_rate):
-    'UEP - NOW Model - Cols x Rows'
-    with open('D:/Dewen/Accuracy/prob_NOW_3classes.csv', 'r', encoding='utf-8-sig') as f: 
-        prob = np.genfromtxt(f, dtype=float, delimiter=',')
-    
-    op_pack = {}
-    op_pack['classes_num'] = prob.shape[0]
-    op_pack['class_prob'] = prob
-    op_pack['max_workers'] = 15
-    op_pack['max_wait'] = max_wait
-    op_pack['partitions'] = 9
-    op_pack['lam'] = lam
-    op_pack['K'] = 9/op_pack['max_workers']
-    op_pack['class_table'] = [0, 0, 0, 1, 1, 1, 2, 2, 2]
-    
-    network = []
-    output_shape = input.shape[1:]
-    
-    network.append(Flatten())
-    output_shape = network[-1].get_output_shape(output_shape)
-    
-    network.append(Dense(output_shape,100, learning_rate= learning_rate, operations = [0,6,6], operation_pack = op_pack))
-    output_shape = network[-1].get_output_shape(output_shape)
-    
-    network.append(ReLU())
-    output_shape = network[-1].get_output_shape(output_shape)
-    
-    network.append(Dense(output_shape,200, learning_rate= learning_rate, operations = [0,6,6], operation_pack = op_pack))
-    output_shape = network[-1].get_output_shape(output_shape)
-    
-    network.append(ReLU())
-    output_shape = network[-1].get_output_shape(output_shape)
-    
-    network.append(Dense(output_shape,num_classes, learning_rate= learning_rate, operations = [0,6,6], operation_pack = op_pack))
-    return network
 
-def model10(input, num_classes, learning_rate):
-    'UEP - EW Model - Cols x Rows'
-    with open('D:/Dewen/Accuracy/prob_EW_3classes.csv', 'r', encoding='utf-8-sig') as f: 
-        prob = np.genfromtxt(f, dtype=float, delimiter=',')
-    
-    op_pack = {}
-    op_pack['classes_num'] = prob.shape[0]
-    op_pack['class_prob'] = prob
-    op_pack['max_workers'] = 15
-    op_pack['max_wait'] = max_wait
-    op_pack['partitions'] = 9
-    op_pack['lam'] = lam
-    op_pack['K'] = 9/op_pack['max_workers']
-    op_pack['class_table'] = [0, 0, 0, 1, 1, 1, 2, 2, 2]
-    
-    network = []
-    output_shape = input.shape[1:]
-    
-    network.append(Flatten())
-    output_shape = network[-1].get_output_shape(output_shape)
-    
-    network.append(Dense(output_shape,100, learning_rate= learning_rate, operations = [0,6,6], operation_pack = op_pack))
-    output_shape = network[-1].get_output_shape(output_shape)
-    
-    network.append(ReLU())
-    output_shape = network[-1].get_output_shape(output_shape)
-    
-    network.append(Dense(output_shape,200, learning_rate= learning_rate, operations = [0,6,6], operation_pack = op_pack))
-    output_shape = network[-1].get_output_shape(output_shape)
-    
-    network.append(ReLU())
-    output_shape = network[-1].get_output_shape(output_shape)
-    
-    network.append(Dense(output_shape,num_classes, learning_rate= learning_rate, operations = [0,6,6], operation_pack = op_pack))
-    return network
     
 model_func = {0: model0,
               1: model1,
@@ -479,40 +319,37 @@ model_func = {0: model0,
               5: model5,
               6: model6,
               7: model7,
-              8: model8,
-              9: model9,
-              10: model10}
+              8: model8}
 
 #-----------------------------------------------------------------------------
-if(mf==0):
+args = parse_args()
+if(args.model_index==0):
     operator_str = 'centralized'
-elif(mf==1 or mf==7):
-    operator_str = 'decentralized'
-elif(mf==2 or mf==3 or mf==9):
+elif(args.model_index==1 or args.model_index==2):
+    operator_str = 'uncoded'
+elif(args.model_index==3 or args.model_index==4):
     operator_str = 'now'
-elif(mf==4 or mf==5 or mf==10):
+elif(args.model_index==5 or args.model_index==6):
     operator_str = 'ew'
 else:
     operator_str = 'block_reps'
 
-if(mf==2 or mf==4):
-    class_str = '_class6'
-elif(mf==3 or mf==5 or mf==9 or mf==10):
+if(args.model_index>2 and args.model_index<7):
     class_str = '_class3'
 else:
     class_str = ''
 
-if(mf>0):
-    wait_str = '_tmax' + str(max_wait)
+if(args.model_index>0):
+    wait_str = '_tmax' + str(args.max_wait)
 else:
     wait_str = ''
 
-if(mf>6):
+if((args.model_index%2)==0 and args.model_index>0):
     tail = '_col'
 else:
     tail = ''
 
-filename_save = 'shelve_accuracy_mnist_dense_'+ operator_str + str(epoch_num) + class_str + wait_str + tail
+filename_save = 'shelve_accuracy_mnist_dense_'+ operator_str + str(args.epoch_num) + class_str + wait_str + tail
 #-----------------------------------------------------------------------------
 "Data Loading"
 (x_train, y_train), (x_test, y_test) = keras.datasets.mnist.load_data()
@@ -530,24 +367,20 @@ x_test /= 255
 y_train = y_train.reshape(-1)
 y_test = y_test.reshape(-1)
 
-# y_temp = np.zeros((y_train.shape[0], num_classes), dtype='float')
-# y_temp[np.arange(y_train.shape[0]),y_train] = 1
-# y_train = y_temp.copy()
-
 #------------------------------------------------------------------------------
 hist = {}
-if batch_size == 60000:
-    for md in range(0, sample_data):
+if args.batch_size == 60000:
+    for md in range(0, args.sample_num):
         #--------------------------------------------------------------------------
         "Initializing our model"
-        network = model_func[mf](x_train, num_classes, learning_rate)
+        network = model_func[args.model_index](x_train, args.class_num, args.learning_rate)
         
         #--------------------------------------------------------------------------
         "Training and extraction of gradients"
         loss = []
         acc = []
         start_time = timer()
-        for epoch in trange(0, epoch_num):
+        for epoch in trange(0, args.epoch_num):
             l, a, _ = train(network, x_train, y_train)
             loss.append(l)
             acc.append(a)
@@ -555,10 +388,10 @@ if batch_size == 60000:
         hist[md] = {'loss': loss,
                     'acc': acc}
 else:
-    for md in trange(0, sample_data):
+    for md in trange(0, args.sample_num):
         #----------------------------------------------------------------------
         "Initializing our model"
-        network = model_func[mf](x_train, num_classes, learning_rate)
+        network = model_func[args.model_index](x_train, args.class_num, args.learning_rate)
         
         #----------------------------------------------------------------------
         "Training and extraction of gradients"
@@ -566,8 +399,8 @@ else:
         acc = []
         
         start_time = timer()
-        for epoch in range(epoch_num):
-            for x_batch,y_batch in iterate_minibatches_verbose_off(x_train,y_train,batchsize=batch_size,shuffle=False):
+        for epoch in range(args.epoch_num):
+            for x_batch,y_batch in iterate_minibatches_verbose_off(x_train,y_train,batchsize=args.batch_size,shuffle=False):
                 l, a, _ = train(network,x_batch,y_batch)
                 
                 loss.append(l)
@@ -577,8 +410,8 @@ else:
                     'acc': acc}
         
         "Saving Dataset"
-        if save_file:   
-            my_shelf = shelve.open(folder_path + filename_save + '_hist' + suffix)   
+        if args.save_acc:   
+            my_shelf = shelve.open(args.folder_path_acc + filename_save + '_hist' + args.suffix)   
             my_shelf["hist"] = hist
             my_shelf.close()
         
@@ -587,20 +420,20 @@ elapsed_time = timer() - start_time # in seconds
 print("\nTraining Time elapsed: \n", elapsed_time, "s\n", elapsed_time/60,'m\n', elapsed_time/(60*60), 'h\n\n')
 
 dim = len(hist[0]['acc'])
-overall_acc = np.zeros((sample_data, dim))
-overall_loss = np.zeros((sample_data, dim))
-for md in range(sample_data):
+overall_acc = np.zeros((args.sample_num, dim))
+overall_loss = np.zeros((args.sample_num, dim))
+for md in range(args.sample_num):
     overall_acc[md] = np.array(hist[md]['acc'])
     overall_loss[md] = np.array(hist[md]['loss'])
 
 "Saving Dataset"
-if save_file:   
-    my_shelf = shelve.open(folder_path + filename_save + suffix)   
+if args.save_acc:   
+    my_shelf = shelve.open(args.folder_path_acc + filename_save + args.suffix)   
     my_shelf['data'] = {'loss': overall_loss,
                         'acc': overall_acc}
     my_shelf.close()
     
-if plot_state:
+if args.plot_state:
     plt.close('all')
     plt.figure()
     plt.plot(overall_loss.mean(axis=0))
