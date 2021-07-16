@@ -6,5 +6,7 @@ The deep learning layers are built from scratch using both numpy and scipy. Kera
 
 # Requirements
 pip install tqdm
+
 pip install keras
+
 pip install scikit-image
