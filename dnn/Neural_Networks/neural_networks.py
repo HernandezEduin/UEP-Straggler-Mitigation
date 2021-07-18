@@ -261,14 +261,6 @@ class Conv2d():
         resultant_shape = self.output_shape.copy()
         resultant_shape.insert(0, input.shape[0])
         
-        # if(self.operation == 1):
-        #     kernel_vec = self.kernel.reshape(-1, self.input_shape[2], self.output_shape[2]) #kernel[0]*kernel[1], channels, filters
-            
-        #     im_col = im2col_4d(padded_input, self.kernel.shape[0:3])        
-        #     result = np.einsum('mijk, kjl -> mil', im_col, kernel_vec)
-        #     result = result.reshape(resultant_shape)
-    
-        # else:
         result = conv2d_foward(padded_input, self.kernel, resultant_shape)
         return result + self.biases 
     
@@ -279,28 +271,6 @@ class Conv2d():
         padded_grads = np.pad(grad_output, self.back_pads)
         grad = np.repeat(grad_output[:,:,:,np.newaxis] , input.shape[3], axis=3)
         
-        # if(self.operation == 1):
-        #     grad_vec = grad.reshape(grad.shape[0], -1, self.input_shape[2], self.output_shape[2])
-        #     #------------------------------------------------------------------
-            
-        #     kernel_vec = kernel_flip.reshape(-1, self.output_shape[2], self.input_shape[2]) #(height*width, filters, depth)
-        #     im_col_grad = im2col_4d(padded_grads, kernel_flip.shape[0:3])
-        #     grad_input = np.einsum('mijk, kjl -> mil', im_col_grad, kernel_vec)
-        #     pack.append(grad_input)
-        #     pack.append(im_col_grad)
-        #     pack.append(kernel_vec)
-            
-        #     grad_input = grad_input.reshape(input.shape)
-            
-        #     #------------------------------------------------------------------
-        #     im_col = im2col_4d(padded_input, grad.shape[1:4])
-        #     grad_weights = np.einsum('mijk, mkjl -> ijl', im_col, grad_vec)
-        #     pack.append(grad_weights)
-        #     pack.append(im_col)
-        #     pack.append(grad_vec)
-            
-        #     grad_weights = grad_weights.reshape(self.kernel.shape)
-        # else:
         grad_input = conv2d_foward(padded_grads, kernel_flip, input.shape)
         #------------------------------------------------------------------
         grad_weights = np.zeros(self.kernel.shape)
@@ -362,7 +332,6 @@ def grad_sigmoid_binary_crossentroy_with_logits(logits, reference_answers):
 
 def sig(z):
     return 1.0 / (1 + np.exp(-z))
-   # return np.where(z >= 0, 1 / (1 + np.exp(-z)), np.exp(z) / (1 + np.exp(z)))
 
 "Overall Foward Propagation"
 def forward(network, X):

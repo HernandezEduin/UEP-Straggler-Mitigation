@@ -10,7 +10,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 #-----------------------------------------------------------------------------
-folder_path = 'D:/Dewen/MNIST_FCN/Accuracy/'
+folder_path = './Accuracy/'
 suffix = '.out'
 
 prefix = 'shelve_accuracy_mnist_dense_'
@@ -24,7 +24,7 @@ class_num = 3
 
 'Coding Type'
 operator_str = ['centralized',
-                'decentralized',
+                'uncoded',
                 'now',
                 'ew',
                 'block_reps']

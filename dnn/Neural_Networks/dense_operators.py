@@ -89,9 +89,6 @@ def dense_operator1(A, B, op_pack = {}):
     
     arrival_prob = 1 - np.exp(-1*op_pack['lam']*op_pack['K']*op_pack['max_wait'])
     packets_not_received= (arrival_prob < np.random.random(size = op_pack['max_workers'])).reshape(op_pack['A_partitions'], op_pack['B_partitions'])
-    
-    # arrival_time = np.random.poisson(lam = op_pack['poisson_lam'], size=(op_pack['max_workers']))
-    # packets_not_received = (arrival_time > op_pack['max_wait']).reshape(op_pack['A_partitions'], op_pack['B_partitions'])
 
     ei = np.where(packets_not_received)
     
@@ -123,8 +120,6 @@ def dense_operator2(A, B, op_pack = {}):
     arrival_prob = 1 - np.exp(-1*op_pack['lam']*op_pack['K']*op_pack['max_wait'])
     packets_received= (arrival_prob >= np.random.random(size = op_pack['max_workers'])).sum()
     
-    # arrival_time = np.random.poisson(lam = op_pack['poisson_lam'], size=(op_pack['max_workers']))
-    # packets_received = (arrival_time <= op_pack['max_wait']).sum()
     prob = op_pack['class_prob'][:, packets_received]
     class_erasure = prob < np.random.random(op_pack['classes_num'])
     class_erasure = np.where(class_erasure)[0]
@@ -149,8 +144,6 @@ def dense_operator3(A, B, op_pack = {}):
     arrival_prob = 1 - np.exp(-1*op_pack['lam']*op_pack['K']*op_pack['max_wait'])
     packets_not_received= (arrival_prob < np.random.random(size = op_pack['max_workers'])).reshape(op_pack['A_partitions'], op_pack['B_partitions'], op_pack['reps'])
     
-    # arrival_time = np.random.poisson(lam = op_pack['poisson_lam'], size=(op_pack['max_workers']))
-    # packets_not_received = (arrival_time > op_pack['max_wait']).reshape(op_pack['A_partitions'], op_pack['B_partitions'], op_pack['reps'])
     
     packets_not_received.prod(axis=2)
     
@@ -215,8 +208,6 @@ def dense_operator6(A, B, op_pack = {}):
     arrival_prob = 1 - np.exp(-1*op_pack['lam']*op_pack['K']*op_pack['max_wait'])
     packets_received= (arrival_prob >= np.random.random(size = op_pack['max_workers'])).sum()
     
-    # arrival_time = np.random.poisson(lam = op_pack['poisson_lam'], size=(op_pack['max_workers']))
-    # packets_received = (arrival_time <= op_pack['max_wait']).sum()
     prob = op_pack['class_prob'][:, packets_received]
     class_erasure = prob < np.random.random(op_pack['classes_num'])
     class_erasure = np.where(class_erasure)[0]

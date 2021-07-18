@@ -3,8 +3,11 @@
 Created on Mon Oct 26 21:15:06 2020
 
 @author: Eduin Hernandez
-Summary: MNIST Accuracy Data
+Summary: Simulation of Straggling Mitigation with Protections Codes for Distributed Approximate Matrix Multiplication
+        in a Deep Learning Scenario.
+Dataset: MNIST Data
 """
+import os
 
 import keras
 from Neural_Networks.neural_networks import *
@@ -33,18 +36,18 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Variables for Cifar10 Training')
 
     'Model Details'
-    parser.add_argument('--class-num', type=int, default=10, help='Number of classes for classifying')    
+    parser.add_argument('--class-num', type=int, default=10, help='Number of classes to classify')    
     parser.add_argument('--batch-size', type=float, default=64, help='Batch Size for Training and Testing')
     parser.add_argument('--epoch-num', type=int, default=3, help='Number of Iterations for Training')
     parser.add_argument('--learning-rate', type=float, default=0.01, help='Learning Rate for model')
     
-    parser.add_argument('--model-index', type=int, default = 3, help='Model to use for the learning')
-    parser.add_argument('--sample-num', type=int, default = 1, help='Number of Models to train from scratch')
+    parser.add_argument('--model-index', type=int, default = 3, help="Model to use for the learning. Model 0 for Centralized, 1 and 2 for decentralized for rxc and cxr respectively. 3 and 4 for now. 5 and 6 for ew. 7 and 8 for block reps.")
+    parser.add_argument('--sample-num', type=int, default = 1, help='Number of Models to train from scratch. The more models, better statistics.')
     
     'Approximation Parameters'
     parser.add_argument('--max-wait', type=float, default = 0.5, help='Maximum wait time for results to arrive')
     parser.add_argument('--lam', type=float, default = 0.5, help='Scaling parameter for delay')
-    parser.add_argument('--prob-path', type=str, default ='./', help='Path for probabilities of correct decoding for UEP' )
+    parser.add_argument('--prob-path', type=str, default ='./', help='Path for probabilities of correct decoding for UEP in csv file.' )
     
     parser.add_argument('--suffix', type=str, default= '.out', help='Save file extension')
     
@@ -64,11 +67,7 @@ def parse_args():
 
 "Training"
 def train(network,X,y):
-    # Train our network on a given batch of X and y.
-    # We first need to run forward to get all layer activations.
-    # Then we can run layer.backward going from last to first layer.
-    # After we have called backward for all layers, all Dense layers have already made one gradient step.
-    
+    # Train our network on a given batch of X and Y
     
     # Get the layer activations
     layer_activations = forward(network,X)
@@ -91,20 +90,7 @@ def train(network,X,y):
         if(len(p)!=0):
             pack.append(p)
         
-    # return np.mean(loss), np.mean(pred==y.argmax(axis=1)), pack
     return np.mean(loss), np.mean(pred==y), pack
-
-"Prediction Model"
-def predict(network,X):
-    # Compute network predictions. Returning indices of largest Logit probability
-    logits = forward(network,X)[-1]
-    return logits.argmax(axis=-1)
-
-def predict_batch(network,x,batch_size):
-    pred = []
-    for x_batch in iterate_prediction(x,batchsize=batch_size):
-        pred.append(predict(network, x_batch))
-    return np.asarray(pred).flatten()
 
 'Base Model'
 def deep_model(input, num_classes, learning_rate, operations = np.zeros((3,3), dtype=int), op_pack = [{},{},{}]):
@@ -350,6 +336,9 @@ else:
     tail = ''
 
 filename_save = 'shelve_accuracy_mnist_dense_'+ operator_str + str(args.epoch_num) + class_str + wait_str + tail
+
+if not os.path.exists(args.folder_path_acc):
+    os.makedirs(args.folder_path_acc)
 #-----------------------------------------------------------------------------
 "Data Loading"
 (x_train, y_train), (x_test, y_test) = keras.datasets.mnist.load_data()
@@ -369,7 +358,7 @@ y_test = y_test.reshape(-1)
 
 #------------------------------------------------------------------------------
 hist = {}
-if args.batch_size == 60000:
+if args.batch_size == 60000: #Training without Batches
     for md in range(0, args.sample_num):
         #--------------------------------------------------------------------------
         "Initializing our model"
@@ -387,7 +376,7 @@ if args.batch_size == 60000:
         
         hist[md] = {'loss': loss,
                     'acc': acc}
-else:
+else: #Training in Batches
     for md in trange(0, args.sample_num):
         #----------------------------------------------------------------------
         "Initializing our model"
@@ -408,12 +397,6 @@ else:
         
         hist[md] = {'loss': loss,
                     'acc': acc}
-        
-        "Saving Dataset"
-        if args.save_acc:   
-            my_shelf = shelve.open(args.folder_path_acc + filename_save + '_hist' + args.suffix)   
-            my_shelf["hist"] = hist
-            my_shelf.close()
         
     
 elapsed_time = timer() - start_time # in seconds
