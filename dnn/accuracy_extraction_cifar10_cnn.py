@@ -3,16 +3,19 @@
 Created on Mon Jan 25 15:54:34 2021
 
 @author: Eduin Hernandez
+
+Summary: Simulation of Straggling Mitigation with Protections Codes for Distributed Approximate Matrix Multiplication
+        in a Deep Learning Scenario.
+Dataset: Cifar10 Data
 """
-import keras
+import os
+
 from keras.datasets import cifar10
 from Neural_Networks.neural_networks import *
 
 import argparse
 import numpy as np
-import matplotlib.pyplot as plt
 
-from tqdm import trange
 from timeit import default_timer as timer
 import shelve
 
@@ -33,29 +36,29 @@ def parse_args():
     'Model Details'
     parser.add_argument('--class-num', type=int, default=10, help='Number of classes for classifying')    
     parser.add_argument('--batch-size', type=float, default=64, help='Batch Size for Training and Testing')
-    parser.add_argument('--epoch-num', type=int, default=50, help='End Iterations for Training')
-    parser.add_argument('--epoch-start', type=int, default=0, help='Start Iterations for Training')
+    parser.add_argument('--epoch-num', type=int, default=120, help='End Iterations for Training')
+    parser.add_argument('--epoch-start', type=int, default=30, help='Start Iterations for Training')
     parser.add_argument('--learning-rate', type=float, default=0.01, help='Learning Rate for model')
     
-    parser.add_argument('--model-index', type=int, help='Model to use for the learning')
+    parser.add_argument('--model-index', type=int, default=0 , help='Model to use for the learning. Model 0 for Centralized, 1 and 2 for decentralized for rxc and cxr respectively. 3 and 4 for now. 5 and 6 for ew. 7 and 8 for block reps.')
     
     'Approximation Parameters'
-    parser.add_argument('--max-wait', type=float, help='Maximum wait time for results to arrive')
+    parser.add_argument('--max-wait', type=float, default = 0.5, help='Maximum wait time for results to arrive')
     parser.add_argument('--lam', type=float, default = 0.5, help='Scaling parameter for delay')
-    parser.add_argument('--prob-path', type=str, default ='D:/Dewen/Cifar10_CNN/', help='Path for probabilities of correct decoding' )
+    parser.add_argument('--prob-path', type=str, default ='./', help='Path for probabilities of correct decoding' )
     
     parser.add_argument('--suffix', type=str, default= '.out', help='Save file extension')
     
     'Save Details'
     parser.add_argument('--save-acc', type=str2bool, default='True', help='Whether to Save the weights of the training')
     parser.add_argument('--filename-acc', type=str, default= 'shelve_accuracy_cifar10_cnn_', help='Filename for Saving Accuracy')
-    parser.add_argument('--folder-path-acc', type=str, help='Folder Save file path for Accuracy')
+    parser.add_argument('--folder-path-acc', type=str, default= './Accuracy/', help='Folder Save file path for Accuracy')
     parser.add_argument('--id', type=str, default='', help='ID value for accuracy')
     
     'Loading Weights'
     parser.add_argument('--load-weights', type=str2bool, default='False', help='Whether to load the model weights at epoch start for the learning')
     parser.add_argument('--filename-weights', type=str, default= 'shelve_weights_cifar10_cnn_epoch', help='Filename for Saving Weights')
-    parser.add_argument('--folder-path-weights', type=str, help='Folder Save file path for Weights')
+    parser.add_argument('--folder-path-weights', type=str, default='./Weights/', help='Folder Save file path for Weights')
     
     args = parser.parse_args()
     return args
@@ -63,10 +66,6 @@ def parse_args():
 "Training"
 def train(network,X,y):
     # Train our network on a given batch of X and y.
-    # We first need to run forward to get all layer activations.
-    # Then we can run layer.backward going from last to first layer.
-    # After we have called backward for all layers, all Dense layers have already made one gradient step.
-    
     
     # Get the layer activations
     layer_activations = forward(network,X)
@@ -179,6 +178,17 @@ def model1(input, args, op_unc):
     return deep_model(input, args.class_num, args.learning_rate, operations, op_packs)
 
 def model2(input, args, op_unc):
+    'Uncoded - Decentralized - Cols x Rows'
+    
+    operations = [[0,4,4],
+                  [0,4,4],
+                  [0,4,4]]
+    
+    op_packs = prepare_op_packs(operations, op_unc, op_unc)
+    
+    return deep_model(input, args.class_num, args.learning_rate, operations, op_packs)
+
+def model3(input, args, op_unc):
     'UEP - NOW Model - Rows x Cols'
     with open(args.prob_path + 'prob_NOW_3classes.csv', 'r', encoding='utf-8-sig') as f: 
         prob = np.genfromtxt(f, dtype=float, delimiter=',')
@@ -204,8 +214,30 @@ def model2(input, args, op_unc):
     
     return deep_model(input, args.class_num, args.learning_rate, operations, op_packs)
         
+def model4(input, args, op_unc):
+    'UEP - NOW Model - Cols x Rows'
+    with open(args.prob_path + 'prob_NOW_3classes.csv', 'r', encoding='utf-8-sig') as f: 
+        prob = np.genfromtxt(f, dtype=float, delimiter=',')
+    
+    op_pack = {}
+    op_pack['classes_num'] = prob.shape[0]
+    op_pack['class_prob'] = prob
+    op_pack['max_workers'] = 15
+    op_pack['max_wait'] = args.max_wait
+    op_pack['partitions'] = 9
+    op_pack['lam'] = args.lam
+    op_pack['K'] = op_unc['max_workers']/op_pack['max_workers']
+    op_pack['class_table'] = [0, 0, 0, 1, 1, 1, 2, 2, 2]
+    
+    operations = [[0,6,6],
+                  [0,6,6],
+                  [0,4,4]]
+    
+    op_packs = prepare_op_packs(operations, op_pack, op_unc)
+    
+    return deep_model(input, args.class_num, args.learning_rate, operations, op_packs)
         
-def model3(input, args, op_unc):
+def model5(input, args, op_unc):
     'UEP - EW Model - Rows x Cols'
     with open(args.prob_path + 'prob_EW_3classes.csv', 'r', encoding='utf-8-sig') as f: 
         prob = np.genfromtxt(f, dtype=float, delimiter=',')
@@ -231,60 +263,7 @@ def model3(input, args, op_unc):
     
     return deep_model(input, args.class_num, args.learning_rate, operations, op_packs)
 
-def model4(input, args, op_unc):
-    'Block Repetition Model - Rows x Cols'
-    op_pack = {}
-    op_pack['max_workers'] = 18
-    op_pack['max_wait'] = args.max_wait
-    op_pack['A_partitions'] = 3
-    op_pack['B_partitions'] = 3
-    op_pack['lam'] = args.lam
-    op_pack['K'] = op_unc['max_workers']/op_pack['max_workers']
-    op_pack['reps'] = 2
-    
-    operations = [[0,3,3],
-                  [0,3,3],
-                  [0,3,1]]
-    
-    op_packs = prepare_op_packs(operations, op_pack, op_unc)
-    
-    return deep_model(input, args.class_num, args.learning_rate, operations, op_packs)
-
-def model5(input, args, op_unc):
-    'Uncoded - Decentralized - Cols x Rows'
-    
-    operations = [[0,4,4],
-                  [0,4,4],
-                  [0,4,4]]
-    
-    op_packs = prepare_op_packs(operations, op_unc, op_unc)
-    
-    return deep_model(input, args.class_num, args.learning_rate, operations, op_packs)
-
 def model6(input, args, op_unc):
-    'UEP - NOW Model - Cols x Rows'
-    with open(args.prob_path + 'prob_NOW_3classes.csv', 'r', encoding='utf-8-sig') as f: 
-        prob = np.genfromtxt(f, dtype=float, delimiter=',')
-    
-    op_pack = {}
-    op_pack['classes_num'] = prob.shape[0]
-    op_pack['class_prob'] = prob
-    op_pack['max_workers'] = 15
-    op_pack['max_wait'] = args.max_wait
-    op_pack['partitions'] = 9
-    op_pack['lam'] = args.lam
-    op_pack['K'] = op_unc['max_workers']/op_pack['max_workers']
-    op_pack['class_table'] = [0, 0, 0, 1, 1, 1, 2, 2, 2]
-    
-    operations = [[0,6,6],
-                  [0,6,6],
-                  [0,4,4]]
-    
-    op_packs = prepare_op_packs(operations, op_pack, op_unc)
-    
-    return deep_model(input, args.class_num, args.learning_rate, operations, op_packs)
-
-def model7(input, args, op_unc):
     'UEP - EW Model - Cols x Rows'
     with open(args.prob_path + 'prob_EW_3classes.csv', 'r', encoding='utf-8-sig') as f: 
         prob = np.genfromtxt(f, dtype=float, delimiter=',')
@@ -306,6 +285,25 @@ def model7(input, args, op_unc):
     op_packs = prepare_op_packs(operations, op_pack, op_unc)
     
     return deep_model(input, args.class_num, args.learning_rate, operations,  op_packs)
+
+def model7(input, args, op_unc):
+    'Block Repetition Model - Rows x Cols'
+    op_pack = {}
+    op_pack['max_workers'] = 18
+    op_pack['max_wait'] = args.max_wait
+    op_pack['A_partitions'] = 3
+    op_pack['B_partitions'] = 3
+    op_pack['lam'] = args.lam
+    op_pack['K'] = op_unc['max_workers']/op_pack['max_workers']
+    op_pack['reps'] = 2
+    
+    operations = [[0,3,3],
+                  [0,3,3],
+                  [0,3,1]]
+    
+    op_packs = prepare_op_packs(operations, op_pack, op_unc)
+    
+    return deep_model(input, args.class_num, args.learning_rate, operations, op_packs)
 
 def model8(input, args, op_unc):
     'Block Repetition Model - Cols x Rows'
@@ -340,16 +338,16 @@ args = parse_args()
 
 if(args.model_index==0):
     operator_str = 'centralized'
-elif(args.model_index==1 or args.model_index==5):
-    operator_str = 'decentralized'
-elif(args.model_index==2 or args.model_index==6):
+elif(args.model_index==1 or args.model_index==2):
+    operator_str = 'uncoded'
+elif(args.model_index==3 or args.model_index==4):
     operator_str = 'now'
-elif(args.model_index==3 or args.model_index==7):
+elif(args.model_index==5 or args.model_index==6):
     operator_str = 'ew'
 else:
     operator_str = 'block_reps'
 
-if(args.model_index==2 or args.model_index==3 or args.model_index==6 or args.model_index==7):
+if(args.model_index>2 and args.model_index<7):
     class_str = '_class3'
 else:
     class_str = ''
@@ -359,13 +357,18 @@ if(args.model_index>0):
 else:
     wait_str = ''
 
-if(args.model_index>4):
+if((args.model_index%2)==0 and args.model_index>0):
     tail = '_col'
 else:
     tail = ''
 
 filename_save = args.filename_acc + operator_str + str(args.epoch_num) + class_str + wait_str + tail
 
+if not os.path.exists(args.folder_path_acc):
+    os.makedirs(args.folder_path_acc)
+    
+if not os.path.exists(args.folder_path_weights):
+    os.makedirs(args.folder_path_weights)
 #-----------------------------------------------------------------------------
 op_pack = {}
 op_pack['max_workers'] = 9

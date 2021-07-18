@@ -3,6 +3,7 @@
 Created on Mon Oct 26 21:15:06 2020
 
 @author: Eduin Hernandez
+
 Summary: Simulation of Straggling Mitigation with Protections Codes for Distributed Approximate Matrix Multiplication
         in a Deep Learning Scenario.
 Dataset: MNIST Data
@@ -41,7 +42,7 @@ def parse_args():
     parser.add_argument('--epoch-num', type=int, default=3, help='Number of Iterations for Training')
     parser.add_argument('--learning-rate', type=float, default=0.01, help='Learning Rate for model')
     
-    parser.add_argument('--model-index', type=int, default = 3, help="Model to use for the learning. Model 0 for Centralized, 1 and 2 for decentralized for rxc and cxr respectively. 3 and 4 for now. 5 and 6 for ew. 7 and 8 for block reps.")
+    parser.add_argument('--model-index', type=int, default = 0, help='Model to use for the learning. Model 0 for Centralized, 1 and 2 for decentralized for rxc and cxr respectively. 3 and 4 for now. 5 and 6 for ew. 7 and 8 for block reps.')
     parser.add_argument('--sample-num', type=int, default = 1, help='Number of Models to train from scratch. The more models, better statistics.')
     
     'Approximation Parameters'
@@ -309,6 +310,7 @@ model_func = {0: model0,
 
 #-----------------------------------------------------------------------------
 args = parse_args()
+
 if(args.model_index==0):
     operator_str = 'centralized'
 elif(args.model_index==1 or args.model_index==2):
