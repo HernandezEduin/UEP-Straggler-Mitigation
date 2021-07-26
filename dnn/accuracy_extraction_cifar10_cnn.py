@@ -227,7 +227,7 @@ def model4(input, args, op_unc):
     op_pack['partitions'] = 9
     op_pack['lam'] = args.lam
     op_pack['K'] = op_unc['max_workers']/op_pack['max_workers']
-    op_pack['class_table'] = [0, 0, 0, 1, 1, 1, 2, 2, 2]
+    op_pack['class_table'] = [0, 1, 1, 2, 2, 2, 2, 2, 2]
     
     operations = [[0,6,6],
                   [0,6,6],
@@ -276,7 +276,7 @@ def model6(input, args, op_unc):
     op_pack['partitions'] = 9
     op_pack['lam'] = args.lam
     op_pack['K'] = op_unc['max_workers']/op_pack['max_workers']
-    op_pack['class_table'] = [0, 0, 0, 1, 1, 1, 2, 2, 2]
+    op_pack['class_table'] = [0, 1, 1, 2, 2, 2, 2, 2, 2]
     
     operations = [[0,6,6],
                   [0,6,6],
